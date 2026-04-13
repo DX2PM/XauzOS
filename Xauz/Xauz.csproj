@@ -19,6 +19,7 @@
         <PxeInterface>192.168.0.8</PxeInterface>
         <DebugEnabled>False</DebugEnabled>
         <QemuVideoDriver>VMWare</QemuVideoDriver>
+		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
         <QemuAudioDriver>AC97</QemuAudioDriver>
         <QemuNetworkDevice>E1000</QemuNetworkDevice>
         <QemuMemory>1024</QemuMemory>
@@ -29,6 +30,14 @@
         <OptimizationLevel>0</OptimizationLevel>
         <RemoveBootDebugOutput>True</RemoveBootDebugOutput>
     </PropertyGroup>
+
+    <ItemGroup>
+      <None Remove="crash" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="crash" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Cosmos.Build" Version="0-*" NoWarn="NU1604" />
