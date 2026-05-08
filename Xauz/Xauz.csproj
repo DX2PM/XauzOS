@@ -29,20 +29,28 @@
         <CompressionType>Gzip</CompressionType>
         <OptimizationLevel>0</OptimizationLevel>
         <RemoveBootDebugOutput>True</RemoveBootDebugOutput>
+        <VMWareEdition>Workstation</VMWareEdition>
+        <TraceMode>All</TraceMode>
+        <StackCorruptionDetectionEnabled>False</StackCorruptionDetectionEnabled>
     </PropertyGroup>
 
     <ItemGroup>
-      <None Remove="crash" />
+      <None Remove="XSys\GUI\cur.bmp" />
+      <None Remove="XSys\GUI\wall.bmp" />
     </ItemGroup>
 
     <ItemGroup>
-      <EmbeddedResource Include="crash" />
+      <EmbeddedResource Include="XSys\GUI\cur.bmp" />
+      <EmbeddedResource Include="XSys\GUI\wall.bmp" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Cosmos.Build" Version="0-*" NoWarn="NU1604" />
         <PackageReference Include="Cosmos.Debug.Kernel" Version="0-*" NoWarn="NU1604" />
         <PackageReference Include="Cosmos.System2" Version="0-*" NoWarn="NU1604" />
+		<Reference Include="Cosmos.Assembler">
+			<HintPath>$(MSBuildProgramFiles32)\Cosmos User Kit\Build\Cosmos.Assembler.dll</HintPath>
+		</Reference>
     </ItemGroup>
 
 </Project>

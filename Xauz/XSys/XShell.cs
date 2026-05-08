@@ -14,7 +14,6 @@ namespace Xauz.XSys
 {
     public static class XShell
     {
-        [ManifestResourceStream(ResourceName = "Xauz.crash")] static byte[] crsh;
         public static CosmosVFS fs = new CosmosVFS();
         public static string uname = "xausr";
         public static int uid = 0;
@@ -71,9 +70,6 @@ namespace Xauz.XSys
             Console.Write("[ WAITING ] Initializating FS\r");
             VFSManager.RegisterVFS(fs);
             Console.WriteLine("[ OK ] Initializating FS");
-            Console.Write("[ WAITING ] Intializating Heap\r");
-            Heap.Init();
-            Console.WriteLine("[ OK ] Initializating Heap");
             Console.Write("[ WAITING ] Collecting Heap\r");
             Heap.Collect();
             Console.WriteLine("[ OK ] Collecting Heap");
@@ -133,12 +129,7 @@ namespace Xauz.XSys
             }
             LoadPath();
             Console.Clear();
-            Welcome();
-            Cosmos.HAL.PCSpeaker.Beep(440, 100); // Ля
-            Cosmos.HAL.PCSpeaker.Beep(523, 100); // До
-            Cosmos.HAL.PCSpeaker.Beep(659, 150); // Ми
-            RunCommand("xsh 0:\\autorun.xsh");
-            
+            BModes.ChangeMode();
         }
 
         public static string ExpandVars(string input)
@@ -195,6 +186,61 @@ namespace Xauz.XSys
             switch (parts[0])
             {
                     case "": break;
+                case "matrix":
+                    Console.Clear();
+
+                    int width = Console.WindowWidth;
+                    int height = Console.WindowHeight;
+
+                    // Массив для хранения текущей позиции 'головы' в каждой колонке
+                    int[] yPositions = new int[width];
+                    Random rnd = new Random();
+
+                    // Инициализируем случайными стартовыми позициями (чтобы не все сразу падали)
+                    for (int i = 0; i < width; i++) yPositions[i] = rnd.Next(0, height);
+
+                    char[] chars = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+
+                    while (true)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            // 1. Рисуем "Голову" (яркий белый или светло-зеленый)
+                            Console.SetCursorPosition(x, yPositions[x]);
+                            Console.ForegroundColor = ConsoleColor.White;
+                            Console.Write(chars[rnd.Next(chars.Length)]);
+
+                            int bodyY = (yPositions[x] - 1 + height) % height;
+                            Console.SetCursorPosition(x, bodyY);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.Write(chars[rnd.Next(chars.Length)]);
+
+                            int tailY = (yPositions[x] - 3 + height) % height;
+                            Console.SetCursorPosition(x, tailY);
+                            Console.ForegroundColor = ConsoleColor.DarkGreen;
+                            Console.Write(chars[rnd.Next(chars.Length)]);
+
+                            // 4. "Стираем" старый хвост (черный)
+                            int clearY = (yPositions[x] - 4 + height) % height;
+                            Console.SetCursorPosition(x, clearY);
+                            Console.Write(" ");
+
+                            // Двигаем голову вниз
+                            yPositions[x]++;
+                            if (yPositions[x] >= height) yPositions[x] = 0;
+                        }
+
+                        // Скорость обновления
+                        Thread.Sleep(30);
+                        if (Sys.KeyboardManager.TryReadKey(out var k))
+                        {
+                            if (Sys.KeyboardManager.ControlPressed && k.Key == Sys.ConsoleKeyEx.C)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    break;
                     case "help":
                     if (parts.Length == 1)
                     {
@@ -427,17 +473,6 @@ parrent {file.mParent.mName}
 path {file.mFullPath}");
                                             }
                                             break;
-                                        case "crash":
-                                            unsafe
-                                            {
-                                                fixed (byte* ptr = crsh)
-                                                {
-                                                    IntPtr address = (IntPtr)ptr;
-                                                    var execute = (delegate* unmanaged<void>)address;
-                                                    execute();
-                                                }
-                                            }
-                                            break;
                                         case "help":
                                             Console.WriteLine(@"Avialable Commands:
 trigger - simulate an PANIC
@@ -451,9 +486,9 @@ exit - return to terminal");
                                             {
                                                 byte* memPtr = (byte*)0x100000;
 
-                                                int width = 80;
-                                                int height = 25;
-                                                int blockSize = width * height;
+                                                int w = 80;
+                                                int h = 25;
+                                                int blockSize = w * h;
 
                                                 while (true)
                                                 {
@@ -468,6 +503,12 @@ exit - return to terminal");
                                                         char c = (data < 32 || data > 126) ? '.' : (char)data;
 
                                                         Console.Write(c);
+                                                        try
+                                                        {
+                                                            File.WriteAllText(@"0:\crashdump.bin", c.ToString());
+                                                        }
+                                                        catch
+                                                        {}
                                                     }
 
                                                     // Звуковой сигнал и пауза
@@ -482,8 +523,7 @@ exit - return to terminal");
                                                     // Небольшая защита: если дошли до конца (условно 4 ГБ для x86), прыгаем в начало
                                                     if ((uint)memPtr >= 0xFFFFFFFF - blockSize)
                                                     {
-                                                        memPtr = (byte*)0x100000;
-                                                        Thread.Sleep(2000);
+                                                        break;
                                                     }
                                                 }
                                             }
@@ -559,19 +599,6 @@ exit - return to terminal");
                     case "cls":
                         Console.Clear();
                         break;
-                
-                case "crash":
-                    
-                    unsafe
-                    {
-                        fixed (byte* ptr = crsh)
-                        {
-                            IntPtr address = (IntPtr)ptr;
-                            var execute = (delegate* unmanaged<void>)address;
-                            execute();
-                        }
-                    }
-                    break;
                 case "set":
                     if (parts.Length < 3) { Console.WriteLine("Usage: addenv [name] [value]"); break; }
                     string varName = parts[1];

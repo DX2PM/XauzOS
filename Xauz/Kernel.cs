@@ -1,5 +1,12 @@
-﻿using Cosmos.System.FileSystem.VFS;
+﻿using Cosmos.Core.Memory;
+using Cosmos.Debug.Kernel;
+using Cosmos.System.FileSystem;
+using Cosmos.System.FileSystem.VFS;
+using Cosmos.System.Graphics;
+using Cosmos.System.Graphics.Fonts;
+using IL2CPU.API.Attribs;
 using System;
+using System.Drawing;
 using System.IO;
 using System.Threading;
 using Xauz.XSys;
@@ -9,283 +16,185 @@ namespace Xauz
 {
     public class Kernel : Sys.Kernel
     {
-        
+        Canvas c;
+        PCScreenFont f = PCScreenFont.Default;
+        CosmosVFS fs = new CosmosVFS();
+        bool fsexists = false;
         protected override void BeforeRun()
         {
-            XShell.Init();
-            
             try
             {
-                VFSManager.CreateFile(@"0:\test");
-                if (!Directory.Exists(@"0:\home\xausr"))
+                XShell.Init();
+
+                try
                 {
-                    Directory.CreateDirectory(@"0:\home\xausr");
+                    VFSManager.CreateFile(@"0:\test");
+                    if (!Directory.Exists(@"0:\home\xausr"))
+                    {
+                        Directory.CreateDirectory(@"0:\home\xausr");
+                    }
+                    if (!Directory.Exists(@"0:\etc"))
+                    {
+                        Directory.CreateDirectory(@"0:\etc");
+                    }
                 }
-                if (!Directory.Exists(@"0:\etc"))
+                catch (Exception ex)
                 {
-                    Directory.CreateDirectory(@"0:\etc");
+                    BModes.Recovery(ex.Message);
+                }
+                if (BModes.cmode == 0)
+                {
+                }
+                else if (BModes.cmode == 1)
+                {
+                    XShell.Welcome();
+                    Cosmos.HAL.PCSpeaker.Beep(440, 100); // Ля
+                    Cosmos.HAL.PCSpeaker.Beep(523, 100); // До
+                    Cosmos.HAL.PCSpeaker.Beep(659, 150); // Ми
+                    XShell.RunCommand("xsh 0:\\autorun.xsh");
+                }
+
+                if (File.Exists(@"0:\recovery.trigger"))
+                {
+                    VFSManager.DeleteFile(@"0:\recovery.trigger");
+                    BModes.Recovery();
                 }
             }
             catch (Exception ex)
             {
-                if (ex.Message.Contains("ATA Error"))
+                Console.WriteLine($"in ..before run: err! {ex.Message}");
+                Console.WriteLine("Kernel stopped by error in preload process. P: Jump to panic. Any other key: recovery mode.");
+                if (Console.ReadKey(true).Key == ConsoleKey.P)
                 {
-                    string[] menuItems = { "Reboot System Now", "Shutdown", "Format Disk", "Setup Defaults (Settings)" };
-                    string[] menuIds = { "reboot", "shutdown", "format", "default" };
-
-                    int selectedIndex = 0;
-
-                    while (true)
-                    {
-                        Console.Clear();
-                        Console.ForegroundColor = ConsoleColor.Cyan;
-                        Console.WriteLine("Xauz Recovery Mode. Ctrl + R to reboot");
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine("Up / Down / Enter - Navigation");
-                        Console.WriteLine();
-
-                        for (int i = 0; i < menuItems.Length; i++)
-                        {
-                            if (i == selectedIndex)
-                            {
-                                Console.BackgroundColor = ConsoleColor.White;
-                                Console.ForegroundColor = ConsoleColor.Black;
-                                Console.WriteLine($"> {menuItems[i]} <");
-                                Console.ResetColor();
-                            }
-                            else
-                            {
-                                Console.WriteLine($"  {menuItems[i]}  ");
-                            }
-                        }
-                        var keyEvent = Sys.KeyboardManager.ReadKey();
-
-                        // Проверка Ctrl + R для быстрой перезагрузки
-                        if (keyEvent.Key == Sys.ConsoleKeyEx.R && Sys.KeyboardManager.ControlPressed)
-                        {
-                            Sys.Power.Reboot();
-                        }
-
-                        switch (keyEvent.Key)
-                        {
-                            case Sys.ConsoleKeyEx.UpArrow:
-                                selectedIndex = (selectedIndex == 0) ? menuItems.Length - 1 : selectedIndex - 1;
-                                break;
-
-                            case Sys.ConsoleKeyEx.DownArrow:
-                                selectedIndex = (selectedIndex == menuItems.Length - 1) ? 0 : selectedIndex + 1;
-                                break;
-
-                            case Sys.ConsoleKeyEx.Enter:
-                                // Извлекаем строковый ID текущего элемента
-                                string currentId = menuIds[selectedIndex];
-
-                                Console.Clear();
-                                // Тот самый switch по именам (case "reboot" и т.д.)
-                                switch (currentId)
-                                {
-                                    case "reboot":
-                                        Console.WriteLine("Rebooting device...");
-                                        Sys.Power.Reboot();
-                                        break;
-
-                                    case "shutdown":
-                                        Console.WriteLine("Shutting down device...");
-                                        Sys.Power.Shutdown();
-                                        break;
-
-                                    case "default":
-                                        Console.WriteLine("Restoring default settings...");
-                                        XShell.RunCommand(@"del HOME");
-                                        XShell.RunCommand(@"del USER");
-                                        XShell.RunCommand(@"del AUTORUN");
-                                        XShell.RunCommand(@"rm 0:\autorun.xsh");
-                                        XShell.RunCommand(@"set HOME 0:\home\xausr");
-                                        XShell.RunCommand(@"set USER xausr");
-                                        XShell.RunCommand(@"set AUTORUN xsh 0:\autorun.xsh");
-                                        VFSManager.CreateFile(@"0:\autorun.xsh");
-                                        string[] ls =
-                                        {
-                    "# This is autorun script. It will be executed every time when XShell starts.",
-                    "# You can put any commands here, for example, to set env variables or start some programs.",
-                    "# Lines starting with # are comments and will be ignored.",
-                    "",
-                    "echo Hello, $USER! Welcome to Xauz Shell!",
-                    "echo Your current directory is $HOME",
-                    "echo Type 'help' to see available commands."
-                };
-                                        File.WriteAllLines(@"0:\autorun.xsh", ls);
-                                        Console.WriteLine("Settings restored to defaults.");
-                                        break;
-
-                                    case "format":
-                                        Console.WriteLine("Warning: Formating disk will erase all saved data on device, and rewrite FS from scratch. This action can be undone\nFormat Drive? (0) y/n");
-                                        if (Console.ReadKey(true).Key == ConsoleKey.Y)
-                                        {
-                                            Console.WriteLine("Erasing 0:");
-                                            for (int i = 0; i < VFSManager.GetDisks()[0].Partitions.Count; i++)
-                                            {
-                                                VFSManager.GetDisks()[0].DeletePartition(i);
-                                                Console.WriteLine($"Deleted partition [0:{i}].");
-                                            }
-                                            Console.WriteLine("Creating primary partition.");
-                                            VFSManager.GetDisks()[0].CreatePartition(VFSManager.GetDisks()[0].Size / 1024 / 1024);
-                                            Console.WriteLine($"Created partition. Size: {VFSManager.GetDisks()[0].Size / 1024 / 1024}.");
-                                            Thread.Sleep(1000);
-                                            Console.WriteLine("Formating partition [1] as FAT32.");
-                                            VFSManager.GetDisks()[0].FormatPartition(0, "FAT32", true);
-                                            Console.WriteLine("Partition [1] formated. Successfully: 1");
-                                            Console.WriteLine("Done.");
-                                            Console.WriteLine("Any key to return menu.");
-                                            Console.ReadKey(true);
-                                        }
-                                        break;
-
-                                    default:
-                                        Console.WriteLine("Unknown command ID.");
-                                        break;
-                                }
-
-                                Console.WriteLine("\nPress any key to return to menu...");
-                                Sys.KeyboardManager.ReadKey();
-                                break;
-                        }
-                    }
+                    XShell.ex = ex;
+                    XShell.RunCommand("trigger");
                 }
-            }
-            if (File.Exists(@"0:\recovery.trigger"))
-            {
-                VFSManager.DeleteFile(@"0:\recovery.trigger");
-                string[] menuItems = { "Reboot System Now", "Shutdown", "Format Disk", "Setup Defaults (Settings)" };
-                string[] menuIds = { "reboot", "shutdown",  "format", "default" };
-
-                int selectedIndex = 0;
-
-                while (true)
+                else
                 {
-                    Console.Clear();
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine("Xauz Recovery Mode. Ctrl + R to reboot");
-                    Console.ForegroundColor = ConsoleColor.Gray;
-                    Console.WriteLine("Up / Down / Enter - Navigation");
-                    Console.WriteLine();
-
-                    for (int i = 0; i < menuItems.Length; i++)
-                    {
-                        if (i == selectedIndex)
-                        {
-                            Console.BackgroundColor = ConsoleColor.White;
-                            Console.ForegroundColor = ConsoleColor.Black;
-                            Console.WriteLine($"> {menuItems[i]} <");
-                            Console.ResetColor();
-                        }
-                        else
-                        {
-                            Console.WriteLine($"  {menuItems[i]}  ");
-                        }
-                    }
-                    var keyEvent = Sys.KeyboardManager.ReadKey();
-
-                    // Проверка Ctrl + R для быстрой перезагрузки
-                    if (keyEvent.Key == Sys.ConsoleKeyEx.R && Sys.KeyboardManager.ControlPressed)
-                    {
-                        Sys.Power.Reboot();
-                    }
-
-                    switch (keyEvent.Key)
-                    {
-                        case Sys.ConsoleKeyEx.UpArrow:
-                            selectedIndex = (selectedIndex == 0) ? menuItems.Length - 1 : selectedIndex - 1;
-                            break;
-
-                        case Sys.ConsoleKeyEx.DownArrow:
-                            selectedIndex = (selectedIndex == menuItems.Length - 1) ? 0 : selectedIndex + 1;
-                            break;
-
-                        case Sys.ConsoleKeyEx.Enter:
-                            // Извлекаем строковый ID текущего элемента
-                            string currentId = menuIds[selectedIndex];
-
-                            Console.Clear();
-                            // Тот самый switch по именам (case "reboot" и т.д.)
-                            switch (currentId)
-                            {
-                                case "reboot":
-                                    Console.WriteLine("Rebooting device...");
-                                    Sys.Power.Reboot();
-                                    break;
-
-                                case "shutdown":
-                                    Console.WriteLine("Shutting down device...");
-                                    Sys.Power.Shutdown();
-                                    break;
-
-                                case "default":
-                                    Console.WriteLine("Restoring default settings...");
-                                    XShell.RunCommand(@"del HOME");
-                                    XShell.RunCommand(@"del USER");
-                                    XShell.RunCommand(@"del AUTORUN");
-                                    XShell.RunCommand(@"rm 0:\autorun.xsh");
-                                    XShell.RunCommand(@"set HOME 0:\home\xausr");
-                                    XShell.RunCommand(@"set USER xausr");
-                                    XShell.RunCommand(@"set AUTORUN xsh 0:\autorun.xsh");
-                                    VFSManager.CreateFile(@"0:\autorun.xsh");
-                                    string[] ls =
-                                    {
-                    "# This is autorun script. It will be executed every time when XShell starts.",
-                    "# You can put any commands here, for example, to set env variables or start some programs.",
-                    "# Lines starting with # are comments and will be ignored.",
-                    "",
-                    "echo Hello, $USER! Welcome to Xauz Shell!",
-                    "echo Your current directory is $HOME",
-                    "echo Type 'help' to see available commands."
-                };
-                                    File.WriteAllLines(@"0:\autorun.xsh", ls);
-                                    Console.WriteLine("Settings restored to defaults.");
-                                    break;
-
-                                case "format":
-                                    Console.WriteLine("Warning: Formating disk will erase all saved data on device, and rewrite FS from scratch. This action can be undone\nFormat Drive? (0) y/n");
-                                    if (Console.ReadKey(true).Key == ConsoleKey.Y)
-                                    {
-                                        Console.WriteLine("Erasing 0:");
-                                        for (int i = 0; i < VFSManager.GetDisks()[0].Partitions.Count; i++)
-                                        {
-                                            VFSManager.GetDisks()[0].DeletePartition(i);
-                                            Console.WriteLine($"Deleted partition [0:{i}].");
-                                        }
-                                        Console.WriteLine("Creating primary partition.");
-                                        VFSManager.GetDisks()[0].CreatePartition(VFSManager.GetDisks()[0].Size / 1024 / 1024);
-                                        Console.WriteLine($"Created partition. Size: {VFSManager.GetDisks()[0].Size / 1024 / 1024}.");
-                                        Thread.Sleep(1000);
-                                        Console.WriteLine("Formating partition [1] as FAT32.");
-                                        VFSManager.GetDisks()[0].FormatPartition(0, "FAT32", true);
-                                        Console.WriteLine("Partition [1] formated. Successfully: 1");
-                                        Console.WriteLine("Done.");
-                                        Console.WriteLine("Any key to return menu.");
-                                        Console.ReadKey(true);
-                                    }
-                                    break;
-
-                                default:
-                                    Console.WriteLine("Unknown command ID.");
-                                    break;
-                            }
-
-                            Console.WriteLine("\nPress any key to return to menu...");
-                            Sys.KeyboardManager.ReadKey();
-                            break;
-                    }
+                    BModes.Recovery(ex.Message);
                 }
             }
         }
 
         protected override void Run()
         {
-            int result = XShell.Run();
-            if (result == 1)
+            if (BModes.cmode == 0)
             {
-                Console.WriteLine($"in ..shell: err! {XShell.ex.Message}");
+                bool initializated = false;
+                int nocollect = 0;
+                while (true)
+                {
+                    if (!initializated)
+                    {
+                        string[] scrcfg = { };
+                        string sw = ""; string sh = "";
+                        Console.WriteLine("Is FE?");
+                        if (File.Exists(@"0:\etc\scrcfg.cfg"))
+                        {
+                            Console.WriteLine("Screen config found, loading...");
+                            try
+                            {
+                                Console.WriteLine("Reading screen config...");
+                                scrcfg = File.ReadAllLines(@"0:\etc\scrcfg.cfg");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error reading screen config: {ex.Message}");
+                                Console.WriteLine("Using default resolution 800x600");
+                                sw = "800"; sh = "600";
+                                Console.ReadKey(true);
+                            }
+                            Console.WriteLine("Parsing screen config...");
+                            sw = scrcfg[0].Trim().Replace("width=", "");
+                            sh = scrcfg[1].Trim().Replace("height=", "");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No screen config found, creating...");
+                            fs.CreateDirectory(@"0:\etc");
+                            string[] scrcfgdata = { };
+                            while (true)
+                            {
+                                Console.Write($"Set Screen Width: ");
+                                sw = Console.ReadLine();
+                                Console.Write("Set Screen Height: ");
+                                sh = Console.ReadLine();
+                                scrcfgdata = new string[] { $"width={sw}", $"height={sh}" };
+                                try
+                                {
+                                    Mode md = new Mode(int.Parse(sw), int.Parse(sh), ColorDepth.ColorDepth32);
+                                    break;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error setting screen resolution: {ex.Message}");
+                                    Console.WriteLine("Set a valid screen res");
+                                    continue;
+                                }
+                            }
+                            File.WriteAllLines(@"0:\etc\scrcfg.cfg", scrcfgdata);
+                            Sys.Power.Reboot();
+                        }
+                        c = FullScreenCanvas.GetFullScreenCanvas(new Mode(int.Parse(sw), int.Parse(sh), ColorDepth.ColorDepth32));
+                        c.Clear(Color.Black);
+                        c.DrawString("XauzOS 1.3", f, new Pen(Color.White), (c.Mode.Columns / 2) - 80, (c.Mode.Rows / 2) - 8);
+                        c.Display();
+                        Sys.MouseManager.ScreenWidth = (uint)c.Mode.Columns; Sys.MouseManager.ScreenHeight = (uint)c.Mode.Rows;
+                        initializated = true;
+                    }
+                    else
+                    {
+                        c.Clear(Color.Orange);
+                        c.DrawSquare(new Pen(Color.White), 10, 10, 100);
+                        c.DrawString("Shutdown", f, new Pen(Color.White), 20, 50);
+                        c.DrawSquare(new Pen(Color.White), 10, 120, 100);
+                        c.DrawString("Reboot", f, new Pen(Color.White), 20, 160);
+                        c.DrawSquare(new Pen(Color.White), 10, 230, 100);
+                        c.DrawString("Files", f, new Pen(Color.White), 20, 270);
+                        c.DrawFilledRectangle(new Pen(Color.White), (int)Sys.MouseManager.X, (int)Sys.MouseManager.Y, 10, 10);
+                        if ((int)Sys.MouseManager.X > 10 && (int)Sys.MouseManager.X < 110 && (int)Sys.MouseManager.Y > 10 && (int)Sys.MouseManager.Y < 110 && Sys.MouseManager.MouseState == Sys.MouseState.Left)
+                        {
+                            c.Disable();
+                            Sys.Power.Shutdown();
+                        }
+                        if ((int)Sys.MouseManager.X > 10 && (int)Sys.MouseManager.X < 110 && (int)Sys.MouseManager.Y > 120 && (int)Sys.MouseManager.Y < 220 && Sys.MouseManager.MouseState == Sys.MouseState.Left)
+                        {
+                            c.Disable();
+                            Sys.Power.Reboot();
+                        }
+                        if ((int)Sys.MouseManager.X > 10 && (int)Sys.MouseManager.X < 110 && (int)Sys.MouseManager.Y > 230 && (int)Sys.MouseManager.Y < 330 && Sys.MouseManager.MouseState == Sys.MouseState.Left)
+                        {
+                            c.Clear(Color.Black);
+                            c.DrawString("Esc for exit", f, new Pen(Color.White), (c.Mode.Columns / 2) - (12 * 8), 10);
+                            c.DrawString("Files in root:", f, new Pen(Color.White), 10, 10);
+                            int i = 30;
+                            foreach (var file in VFSManager.GetDirectoryListing(@"0:\"))
+                            {
+                                c.DrawString(file.mName, f, new Pen(Color.White), 10, 10 * i);
+                                i += 2;
+                            }
+                            c.Display();
+                            while (true)
+                            {
+                                if (Sys.KeyboardManager.ReadKey().Key == Sys.ConsoleKeyEx.Escape)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                        nocollect++;
+                        c.Display();
+                        Heap.Collect();
+                    }
+                }
+            }
+            else
+            {
+                int result = XShell.Run();
+                if (result == 1)
+                {
+                    Console.WriteLine($"in ..shell: err! {XShell.ex.Message}");
+                }
             }
         }
     }
